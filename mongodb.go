@@ -18,7 +18,6 @@ package eval
 
 import (
 	"fmt"
-	"testing"
 
 	"gopkg.in/mgo.v2"
 )
@@ -35,23 +34,23 @@ type MongoDBEnvironment struct {
 
 // PrepareMongoDBEnvironment creates a new MongoDB container, starts it and open
 // a new session to database.
-func PrepareMongoDBEnvironment(tb testing.TB) *MongoDBEnvironment {
-	mongo := NewMongoDBEnvironment(tb)
-	if !mongo.Applicability() {
-		tb.Skip("This test cannot be run because Docker is not acessible")
-		return nil
+func PrepareMongoDBEnvironment() (*MongoDBEnvironment, *ErrUser) {
+	mongo := NewMongoDBEnvironment()
+	if ok, err := mongo.Applicability(); !ok {
+		return nil, err
 	}
 
-	if !mongo.Run() {
-		tb.Fatal("Could not start MongoDB server")
-		return nil
+	if ok, err := mongo.Run(); !ok {
+		return nil, err
 	}
 
 	net, err := mongo.Network()
 	if err != nil {
 		mongo.Stop()
-		tb.Fatalf("Error getting MongoDB IP address: %s\n", err)
-		return nil
+		return nil, &ErrUser{
+			Fatal,
+			fmt.Sprintf("Error getting MongoDB IP address: %s", err),
+		}
 	}
 
 	mgourl := fmt.Sprintf(mongoURLTpl, net[0].IPAddress, net[0].Port)
@@ -59,22 +58,28 @@ func PrepareMongoDBEnvironment(tb testing.TB) *MongoDBEnvironment {
 	session, err := newDBSession(mgourl)
 	if err != nil {
 		mongo.Stop()
-		tb.Fatalf("Error opening a MongoDB session: %s\n", err)
-		return nil
+		return nil, &ErrUser{
+			Fatal,
+			fmt.Sprintf("Error opening a MongoDB session: %s", err),
+		}
 	}
 
 	return &MongoDBEnvironment{
 		mongo,
 		session,
-	}
+	}, nil
 }
 
 // Dispose closes database session and removes current environment.
 func (e *MongoDBEnvironment) Dispose() {
-	e.session.Close()
-	e.env.Stop()
-	e.session = nil
-	e.env = nil
+	if e.session != nil {
+		e.session.Close()
+		e.session = nil
+	}
+	if e.env != nil {
+		e.env.Stop()
+		e.env = nil
+	}
 }
 
 // Session returns the database session for current environment.

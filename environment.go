@@ -17,7 +17,7 @@
 package eval
 
 import (
-	"testing"
+	"fmt"
 	"time"
 
 	"gopkg.in/raiqub/docker.v0"
@@ -38,19 +38,17 @@ type Environment struct {
 	image     *docker.Image
 	container *docker.Container
 	run       func() (*docker.Container, error)
-	test      testing.TB
 }
 
 // NewMongoDBEnvironment creates a instance that allows to use MongoDB for
 // testing
-func NewMongoDBEnvironment(tb testing.TB) *Environment {
+func NewMongoDBEnvironment() *Environment {
 	d := docker.NewDocker()
 	mongo := docker.NewImageMongoDB(d)
 
 	return &Environment{
 		dockerBin: d,
 		image:     &mongo.Image,
-		test:      tb,
 		run: func() (*docker.Container, error) {
 			cfg := docker.NewRunConfig()
 			cfg.Detach()
@@ -60,14 +58,13 @@ func NewMongoDBEnvironment(tb testing.TB) *Environment {
 }
 
 // NewRedisEnvironment creates a instance that allows to use Redis for testing.
-func NewRedisEnvironment(tb testing.TB) *Environment {
+func NewRedisEnvironment() *Environment {
 	d := docker.NewDocker()
 	redis := docker.NewImage(d, ImageRedisName)
 
 	return &Environment{
 		dockerBin: d,
 		image:     redis,
-		test:      tb,
 		run: func() (*docker.Container, error) {
 			cfg := docker.NewRunConfig()
 			cfg.Detach()
@@ -78,17 +75,24 @@ func NewRedisEnvironment(tb testing.TB) *Environment {
 
 // Applicability tests whether current testing environment can be run on current
 // host.
-func (s *Environment) Applicability() bool {
+func (s *Environment) Applicability() (bool, *ErrUser) {
 	if !s.dockerBin.HasBin() {
-		return false
+		return false, &ErrUser{
+			Warn,
+			"Docker binary was not found",
+		}
 	}
 
 	_, err := s.dockerBin.Run("ps")
 	if err != nil {
-		s.test.Log("Docker is installed but is not running or current user " +
-			"is lacking permissions")
+		return false, &ErrUser{
+			Warn,
+			"Docker is installed but is not running or current user " +
+				"is lacking permissions",
+		}
 	}
-	return err == nil
+
+	return true, nil
 }
 
 // Network returns network information from current running container.
@@ -106,30 +110,31 @@ func (s *Environment) Network() ([]docker.NetworkNode, error) {
 }
 
 // Run starts a new Docker instance for testing environment.
-func (s *Environment) Run() bool {
+func (s *Environment) Run() (bool, *ErrUser) {
 	if err := s.image.Setup(); err != nil {
-		s.test.Fatalf("Error setting up Docker: %v", err)
-		return false
+		return false, &ErrUser{
+			Fatal,
+			fmt.Sprintf("Error setting up Docker: %v", err),
+		}
 	}
 
 	var err error
 	s.container, err = s.run()
 	if err != nil {
-		if s.container != nil {
-			s.container.Kill()
-			s.container.Remove()
+		s.Stop()
+		return false, &ErrUser{
+			Fatal,
+			fmt.Sprintf("Error running a new Docker container: %v", err),
 		}
-
-		s.test.Fatal("Error running a new Docker container:", err)
-		return false
 	}
 
 	if s.container.HasExposedPorts() {
 		if err := s.container.WaitStartup(StartupTimeout); err != nil {
-			s.container.Kill()
-			s.container.Remove()
-			s.test.Fatal("Timeout waiting Docker instance to respond:", err)
-			return false
+			s.Stop()
+			return false, &ErrUser{
+				Fatal,
+				fmt.Sprintf("Timeout waiting Docker instance to respond: %v", err),
+			}
 		}
 	} else {
 		timeout := time.After(StartupTimeout)
@@ -138,13 +143,16 @@ func (s *Environment) Run() bool {
 			case <-timeout:
 				inspect, err := s.container.Inspect()
 				if err != nil || !inspect[0].State.Running {
-					return false
+					return false, &ErrUser{
+						Fatal,
+						fmt.Sprint("Timeout waiting container startup"),
+					}
 				}
 			}
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 // Stop removes current running testing environment.

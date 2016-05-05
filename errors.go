@@ -20,11 +20,36 @@ import (
 	"fmt"
 )
 
-// A NotRunningError represents a error when a Environment function is called
+const (
+	// Info defines a informational event.
+	Info = 0
+
+	// Warn defines a event which indicates wrong parameters.
+	Warn = 1
+
+	// Error defines a failed event.
+	Error = 2
+
+	// Fatal defines a unrecoverable event.
+	Fatal = 3
+)
+
+// A NotRunningError represents an error when a Environment function is called
 // before it is running.
 type NotRunningError string
 
 // Error returns string representation of current instance error.
 func (e NotRunningError) Error() string {
 	return fmt.Sprintf("The environment '%s' is not running", string(e))
+}
+
+// A ErrUser represents an event that needs user attention.
+type ErrUser struct {
+	Severity int
+	Message  string
+}
+
+// Error returns string representation of current instance error.
+func (e ErrUser) Error() string {
+	return e.Message
 }

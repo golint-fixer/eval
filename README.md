@@ -35,10 +35,10 @@ Examples can be found on [library documentation][doc].
 
 ## Running tests
 
-The tests can be run via the provided Bash script:
+The tests can be run via the provided Makefile:
 
 ```bash
-./test.sh
+make test
 ```
 
 ## License

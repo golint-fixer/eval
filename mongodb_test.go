@@ -41,9 +41,16 @@ func TestMongoDBEnvironmentSession(t *testing.T) {
 		true,
 	}
 
-	env := PrepareMongoDBEnvironment(t)
-	if env == nil {
-		return
+	env, err := PrepareMongoDBEnvironment()
+	if err != nil {
+		switch err.Severity {
+		case Info:
+			t.Log(err.Message)
+		case Warn:
+			t.Skip(err.Message)
+		case Error, Fatal:
+			t.Fatal(err.Message)
+		}
 	}
 	defer env.Dispose()
 
